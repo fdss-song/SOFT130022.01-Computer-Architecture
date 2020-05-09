@@ -1,0 +1,3 @@
+dummy.o(.text+0x23f): In function `main':
+/home/song/simplescalar/binutils-2.5.2/libiberty/functions.def:40: the use of `tmpnam' is dangerous, better use `mkstemp'
+dummy.o(.text+0x291):/home/song/simplescalar/binutils-2.5.2/libiberty/functions.def:55: `sys_nerr' is deprecated; use `strerror' or `strerror_r' instead
