@@ -1,5 +1,0 @@
-#!/bin/sh
-# This file was generated automatically by configure.  Do not edit.
-# This directory was configured as follows:
-.././configure --host=i386-unkonwn-linux --target=sslittle-na-sstrix --prefix=/home/song/simplescalar/ --with-gnu-as --with-gnu-ld --with-gnu-as --with-gnu-ld --norecursion 
-# using "../bfd/config/i386linux.mh" and "./../bfd/config/sslittle-na-sstrix.mt"
