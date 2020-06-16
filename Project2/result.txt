@@ -1,0 +1,11 @@
+without cache: 
+Clock Cycles: 65547888
+Memory Accesses: 6054224
+
+with cache: 
+Clock Cycles: 19117798
+Memory Accesses: 359357
+Memory Hits: 10720730
+Memory Misses: 339142
+Line Replacements: 339078
+Line Write-backs: 20214

@@ -98,7 +98,7 @@ void forward(int *val, int *src);
 /* do forward */
 void do_forward();
 
-void cache_log();
+void do_log();
 
 #define MD_FETCH_INSTI(INST, MEM, PC)                   \
   {                                                     \

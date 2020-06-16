@@ -26,7 +26,6 @@ typedef struct cache_set {
 
 typedef struct cache {
   cache_set_t sets[CACHE_SET];
-  unsigned int access;
   unsigned int hit;
   unsigned int miss;
   unsigned int replace;

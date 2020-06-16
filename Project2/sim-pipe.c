@@ -7,12 +7,8 @@
 /* don't count instructions flag, enabled by default, disable for inst count */
 #undef NO_INSN_COUNT
 
-#define DDEBUG
-
-#define CACHE
-
 /*
-#undef CACHE
+#define DDEBUG
 */
 
 #include "dlite.h"
@@ -73,6 +69,7 @@ struct memwb_buf mw, wb;
 struct control_buf ctl;
 
 counter_t sim_num_clk;
+counter_t num_mem_access;
 
 #ifdef CACHE
 cache_t cache;
@@ -147,6 +144,7 @@ void sim_init(void) {
 
   /* cycle */
   sim_num_clk = 0;
+  num_mem_access = 0;
 }
 
 /* load program into simulated state */
@@ -332,17 +330,17 @@ void do_if() {
   cycle += cache_read(&cache, fd.PC + 4, &(instruction.b));
 #else
   MD_FETCH_INSTI(instruction, mem, fd.PC);
+  num_mem_access++;
 #endif
   fd.inst = instruction;
 #ifdef DDEBUG
-printf("fd 0x%x: 0x%x, 0x%x\n", fd.PC, instruction.a, instruction.b);
+  printf("fd 0x%x: 0x%x, 0x%x\n", fd.PC, instruction.a, instruction.b);
 
-if(fd.PC >= 0x004001f8){
-  int i = 0;
-  for(; i < 10000000; i++){
-    
+  if (fd.PC >= 0x004001f8) {
+    int i = 0;
+    for (; i < 10000000; i++) {
+    }
   }
-}
 
 #endif
   INC_CYCLE(cycle);
@@ -455,7 +453,7 @@ READ_OPRAND_VALUE:
     de.aluB = 16;
   } else if (de.func == ALU_SHTL) { /* SLL */
     de.srcB = DNA;
-    de.aluB =  ((int)((short)(de.inst.b & 0xff)));
+    de.aluB = ((int)((short)(de.inst.b & 0xff)));
   } else { /* ADD, ADDU, MULTU */
     de.srcB = de.oprand.in2;
   }
@@ -519,7 +517,7 @@ void do_ex() {
       break;
     case ALU_MULT:
 #ifdef DDEBUG
-printf("ex %d: mult\n", mult++);
+      printf("ex %d: mult\n", mult++);
 #endif
       SET_HI(0);
       SET_LO(0);
@@ -553,28 +551,36 @@ void do_mem() {
   mw.ALUOutput = em.ALUOutput;
   mw.rw = em.rw;
   int cycle = 0;
+
+#ifdef CACHE
   switch (em.rw) {
     case 1: /* store */
-#ifdef CACHE
       cycle = cache_write(&cache, em.ALUOutput, (word_t *)&em.dstM);
-#else
-      cycle = MISS;
-      WRITE_WORD(em.dstM, em.ALUOutput, _fault);
-      if (_fault != md_fault_none) DECLARE_FAULT(_fault);
-#endif
-      break;  /* TODO: important */
-    case 2: /* load */
-#ifdef CACHE
+      break; /* TODO: important */
+    case 2:  /* load */
       cycle = cache_read(&cache, em.ALUOutput, ((word_t *)&mw.memload));
-#else
-      cycle = MISS;
-      mw.memload = READ_WORD(em.ALUOutput, _fault);
-      if (_fault != md_fault_none) DECLARE_FAULT(_fault);
-#endif
       ctl.regs &= ~(1 << em.dstE);
     default:
       break;
   }
+#else
+  switch (em.rw) {
+    case 1: /* store */
+      cycle = MISS;
+      WRITE_WORD(em.dstM, em.ALUOutput, _fault);
+      if (_fault != md_fault_none) DECLARE_FAULT(_fault);
+      num_mem_access++;
+      break; /* TODO: important */
+    case 2:  /* load */
+      cycle = MISS;
+      mw.memload = READ_WORD(em.ALUOutput, _fault);
+      if (_fault != md_fault_none) DECLARE_FAULT(_fault);
+      ctl.regs &= ~(1 << em.dstE);
+      num_mem_access++;
+    default:
+      break;
+  }
+#endif
   INC_CYCLE(cycle);
 }
 
@@ -591,26 +597,24 @@ void do_wb() {
   if (mw.inst.a == SYSCALL) {
 #ifdef CACHE
     cache_flush(&cache);
-    cache_log();
 #endif
+    do_log();
     SYSCALL(mw.inst);
   }
 }
 
-#ifdef CACHE
-
-void cache_log() {
-  enum md_fault_type _fault;
+void do_log() {
   fprintf(stdout, "Clock Cycles: %d\n", sim_num_clk);
-  fprintf(stdout, "Memory Accesses: %d\n", cache.access);
+  fprintf(stdout, "Memory Accesses: %d\n", num_mem_access);
+#ifdef CACHE
   fprintf(stdout, "Memory Hits: %d\n", cache.hit);
   fprintf(stdout, "Memory Misses: %d\n", cache.miss);
   fprintf(stdout, "Line Replacements: %d\n", cache.replace);
   fprintf(stdout, "Line Write-backs: %d\n", cache.wb);
-  if (_fault != md_fault_none) {
-    DECLARE_FAULT(_fault);
-  }
+#endif
 }
+
+#ifdef CACHE
 
 void init_cache(cache_t *cache) {
   int i, j;
@@ -618,7 +622,6 @@ void init_cache(cache_t *cache) {
   cache_line_t *line;
 
   /* init cache */
-  cache->access = 0;
   cache->hit = 0;
   cache->miss = 0;
   cache->replace = 0;
@@ -647,13 +650,15 @@ void cache_write_back(cache_line_t *line, int index) {
   int i = 0;
   for (i = 0; i < BLOCK_SIZE; i++) {
     WRITE_WORD(line->data[i], addr + i * sizeof(word_t), _fault);
-    if (_fault != md_fault_none){
+    if (_fault != md_fault_none) {
       panic("MEMORY ERROR!");
     }
   }
 
   line->valid = 0;
   line->dirty = 0;
+
+  num_mem_access++;
 }
 
 void cache_flush(cache_t *cache) {
@@ -665,7 +670,7 @@ void cache_flush(cache_t *cache) {
     set = cache->sets + i;
     for (j = 0; j < CACHE_ASSOCIATE; j++) {
       line = set->lines + j;
-      if (line->valid) {
+      if (line->valid && line->dirty) {
         cache_write_back(line, j);
       }
     }
@@ -707,13 +712,13 @@ int cache_access(cache_t *cache, md_addr_t addr, word_t *word,
     cycle = MISS;
     cache->miss++;
     fetch_line(&newline, align_addr);
-    if((cindex = place_cache_line(cache, &newline, index)) == CACHE_ASSOCIATE){
+    if ((cindex = place_cache_line(cache, &newline, index)) ==
+        CACHE_ASSOCIATE) {
       panic("place fail");
     }
     func(set->lines + cindex, word, offset);
   }
 
-  cache->access++;
   return cycle;
 }
 
@@ -735,6 +740,7 @@ void fetch_line(cache_line_t *line, md_addr_t addr) {
   line->tag = ADDR_TAG(addr);
   line->dirty = 0;
   line->valid = 1;
+  num_mem_access++;
 }
 
 int place_cache_line(cache_t *cache, cache_line_t *cline, int index) {
@@ -777,7 +783,7 @@ int place_cache_line(cache_t *cache, cache_line_t *cline, int index) {
       i = set->queue[i];
     }
   }
-  
+
   /* place the line */
   set->lines[cindex] = *cline;
 
